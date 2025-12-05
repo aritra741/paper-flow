@@ -1,0 +1,12 @@
+[Unit]
+Description=Run arXiv Paper Agent daily at 9:00 AM
+Requires=arxiv-agent.service
+
+[Timer]
+OnCalendar=daily
+OnCalendar=*-*-* 09:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

@@ -1,0 +1,15 @@
+[Unit]
+Description=arXiv Paper Agent
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=SCRIPT_DIR_PLACEHOLDER
+ExecStart=SCRIPT_DIR_PLACEHOLDER/.venv/bin/python3 SCRIPT_DIR_PLACEHOLDER/main.py
+StandardOutput=append:SCRIPT_DIR_PLACEHOLDER/agent.log
+StandardError=append:SCRIPT_DIR_PLACEHOLDER/agent.log
+EnvironmentFile=SCRIPT_DIR_PLACEHOLDER/.env
+
+[Install]
+WantedBy=multi-user.target
+
