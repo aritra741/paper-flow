@@ -3,6 +3,8 @@ import feedparser
 from datetime import datetime, timezone, timedelta
 import subprocess
 import time
+import os
+import re
 
 TOPICS = [
     "unstructured data analysis",
@@ -15,6 +17,60 @@ MAX_RESULTS = 10
 MODEL = "gemma2:2b"  
 DAYS_BACK = 7  # look back at last 7 days
 VERBOSE = True
+RELEVANT_PAPERS_FILE = "relevant_papers.txt"
+
+def extract_paper_id(entry) -> str:
+    """Extract arXiv paper ID from entry (e.g., '1234.5678' from 'http://arxiv.org/abs/1234.5678v1')."""
+    # entry.id typically looks like: http://arxiv.org/abs/1234.5678v1
+    # or entry.link might be: http://arxiv.org/abs/1234.5678
+    id_str = getattr(entry, 'id', getattr(entry, 'link', ''))
+    # Extract the numeric part (e.g., 1234.5678)
+    match = re.search(r'/(\d{4}\.\d{4,5})', id_str)
+    if match:
+        return match.group(1)
+    # Fallback: try to extract any pattern that looks like an arXiv ID
+    match = re.search(r'(\d{4}\.\d{4,5})', id_str)
+    if match:
+        return match.group(1)
+    return None
+
+
+def load_relevant_paper_ids(file_path: str) -> set:
+    """Load existing relevant paper IDs from the txt file."""
+    if not os.path.exists(file_path):
+        if VERBOSE:
+            print(f"[DEBUG] Cache file '{file_path}' does not exist, starting with empty cache")
+        return set()
+    
+    paper_ids = set()
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                paper_id = line.strip()
+                if paper_id:  # Skip empty lines
+                    paper_ids.add(paper_id)
+        if VERBOSE:
+            print(f"[DEBUG] Loaded {len(paper_ids)} paper IDs from cache file '{file_path}'")
+    except Exception as e:
+        print(f"[WARN] Failed to load cache file '{file_path}': {e}")
+        if VERBOSE:
+            print(f"[DEBUG] Exception details: {type(e).__name__}: {str(e)}")
+    
+    return paper_ids
+
+
+def save_paper_id(file_path: str, paper_id: str):
+    """Append a paper ID to the cache file."""
+    try:
+        with open(file_path, 'a', encoding='utf-8') as f:
+            f.write(f"{paper_id}\n")
+        if VERBOSE:
+            print(f"[DEBUG] Saved paper ID '{paper_id}' to cache file '{file_path}'")
+    except Exception as e:
+        print(f"[WARN] Failed to save paper ID '{paper_id}' to cache file '{file_path}': {e}")
+        if VERBOSE:
+            print(f"[DEBUG] Exception details: {type(e).__name__}: {str(e)}")
+
 
 def query_arxiv(keyword: str, max_results: int = 20):
     if VERBOSE:
@@ -136,6 +192,9 @@ def main():
         print(f"  - Days back: {DAYS_BACK}")
         print(f"  - Verbose mode: {VERBOSE}")
     
+    # Load existing relevant paper IDs from cache
+    cached_paper_ids = load_relevant_paper_ids(RELEVANT_PAPERS_FILE)
+    
     now = datetime.now(timezone.utc)
     week_ago = now - timedelta(days=DAYS_BACK)
     if VERBOSE:
@@ -151,6 +210,7 @@ def main():
     total_entries_processed = 0
     total_entries_in_range = 0
     total_llm_calls = 0
+    total_cached_hits = 0
 
     for idx, topic in enumerate(TOPICS, 1):
         if VERBOSE:
@@ -187,10 +247,40 @@ def main():
 
             title = entry.title
             abstract = entry.summary
-
-            # Filter relevance
-            total_llm_calls += 1
-            is_relevant = llm_filter(title, abstract)
+            
+            # Extract paper ID
+            paper_id = extract_paper_id(entry)
+            if not paper_id:
+                if VERBOSE:
+                    print(f"[WARN] Could not extract paper ID for entry, skipping cache check")
+                paper_id = None
+            
+            # Check if paper is already in cache
+            is_relevant = False
+            if paper_id and paper_id in cached_paper_ids:
+                # Paper already known to be relevant
+                is_relevant = True
+                total_cached_hits += 1
+                if VERBOSE:
+                    print(f"[DEBUG] Paper ID '{paper_id}' found in cache, skipping LLM call")
+            else:
+                # Paper not in cache, check with LLM
+                if VERBOSE:
+                    if paper_id:
+                        print(f"[DEBUG] Paper ID '{paper_id}' not in cache, checking with LLM...")
+                    else:
+                        print(f"[DEBUG] Paper ID unknown, checking with LLM...")
+                
+                total_llm_calls += 1
+                is_relevant = llm_filter(title, abstract)
+                
+                # If relevant, add to cache
+                if is_relevant and paper_id:
+                    cached_paper_ids.add(paper_id)
+                    save_paper_id(RELEVANT_PAPERS_FILE, paper_id)
+                    if VERBOSE:
+                        print(f"[INFO] Added paper ID '{paper_id}' to cache")
+            
             if is_relevant:
                 topic_relevant_count += 1
                 relevant_papers.append((published_date.date(), format_entry(entry)))
@@ -212,6 +302,7 @@ def main():
         print(f"\n[DEBUG] Processing complete:")
         print(f"  - Total entries retrieved: {total_entries_processed}")
         print(f"  - Entries in date range: {total_entries_in_range}")
+        print(f"  - Cache hits (skipped LLM): {total_cached_hits}")
         print(f"  - Total LLM calls made: {total_llm_calls}")
         print(f"  - Relevant papers found: {len(relevant_papers)}")
 
