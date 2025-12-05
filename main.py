@@ -22,12 +22,12 @@ DAYS_BACK = 7  # look back at last 7 days
 VERBOSE = True
 RELEVANT_PAPERS_FILE = "relevant_papers.txt"
 
-# Email configuration
-USER_EMAIL = os.getenv("USER_EMAIL", "")  # Set via environment variable or modify here
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")  # Gmail default, change for other providers
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))  # 587 for TLS, 465 for SSL
+
+USER_EMAIL = os.getenv("USER_EMAIL", "")  # Your email address
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")  # Gmail default
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))  # 587 for TLS
 SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")  # Usually same as USER_EMAIL
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")  # Use app password for Gmail
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")  # Use app password for Gmail, NOT YOUR REGULAR PASSWORD
 
 def extract_paper_id(entry) -> str:
     """Extract arXiv paper ID from entry (e.g., '1234.5678' from 'http://arxiv.org/abs/1234.5678v1')."""
@@ -184,7 +184,7 @@ Respond with ONLY one word: YES or NO. Do not explain."""
             print(f"[DEBUG] Relevance decision: {'RELEVANT' if is_relevant else 'NOT RELEVANT'}")
         return is_relevant
     except Exception as e:
-        print(f"[WARN] Qwen filter failed: {e}")
+        print(f"[WARN] LLM filter failed: {e}")
         if VERBOSE:
             print(f"[DEBUG] Exception type: {type(e).__name__}")
             print(f"[DEBUG] Exception details: {str(e)}")
@@ -249,16 +249,24 @@ def send_batch_email_notification(papers_list):
         if VERBOSE:
             print(f"[DEBUG] Sending email notification to {USER_EMAIL}...")
         
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()  # Enable TLS encryption
-        server.login(SMTP_USERNAME, SMTP_PASSWORD)
-        text = msg.as_string()
-        server.sendmail(SMTP_USERNAME, USER_EMAIL, text)
-        server.quit()
-        
-        if VERBOSE:
-            print(f"[INFO] Email notification sent successfully to {USER_EMAIL}")
-        return True
+        server = None
+        try:
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+            server.starttls()  # Enable TLS encryption
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            text = msg.as_string()
+            server.sendmail(SMTP_USERNAME, USER_EMAIL, text)
+            
+            if VERBOSE:
+                print(f"[INFO] Email notification sent successfully to {USER_EMAIL}")
+            return True
+        finally:
+            if server:
+                try:
+                    server.quit()
+                except Exception as quit_error:
+                    if VERBOSE:
+                        print(f"[DEBUG] Error closing SMTP connection: {quit_error}")
         
     except Exception as e:
         print(f"[WARN] Failed to send email notification: {e}")
@@ -277,7 +285,6 @@ def main():
         print(f"  - Days back: {DAYS_BACK}")
         print(f"  - Verbose mode: {VERBOSE}")
     
-    # Load existing relevant paper IDs from cache
     cached_paper_ids = load_relevant_paper_ids(RELEVANT_PAPERS_FILE)
     
     now = datetime.now(timezone.utc)

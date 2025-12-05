@@ -1,2 +1,31 @@
-.venv
+# Virtual environment
+.venv/
+venv/
+env/
 
+# Logs
+*.log
+agent.log
+cron.log
+launchd.log
+
+# Cache
+relevant_papers.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Environment variables
+.env
+.env.local
