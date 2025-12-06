@@ -10,7 +10,7 @@ An automated agent that monitors arXiv for papers on **any topics you choose**. 
 - 🤖 Uses an LLM locally to intelligently filter papers for relevance
 - 📧 Sends email notifications for new relevant papers
 - 💾 Caches previously seen papers to avoid duplicate notifications
-- ⏰ Can run automatically daily via macOS LaunchAgent
+- ⏰ Can run automatically daily via macOS LaunchAgent or Linux systemd timer
 
 ## Prerequisites
 
@@ -21,7 +21,7 @@ Before setting up, make sure you have:
    - Install from: https://ollama.ai
    - The agent uses the `gemma2:2b` model by default
    - Pull the model: `ollama pull gemma2:2b`
-3. **macOS** (for automatic scheduling via LaunchAgent)
+3. **macOS or Linux (Ubuntu/Debian)** (for automatic scheduling)
 
 ## Quick Start
 
@@ -84,7 +84,7 @@ This will:
 - Display relevant papers
 - Send email notifications if configured
 
-## Automatic Daily Runs (macOS)
+## Automatic Daily Runs
 
 To set up the agent to run automatically every day at 9:00 AM:
 
@@ -92,24 +92,38 @@ To set up the agent to run automatically every day at 9:00 AM:
 ./setup.sh
 ```
 
+The setup script automatically detects your operating system and configures the appropriate scheduler:
+- **macOS**: Creates a LaunchAgent
+- **Linux (Ubuntu/Debian)**: Creates a systemd timer
+
 This will:
-- Create a macOS LaunchAgent
 - Schedule daily runs at 9:00 AM
 - Configure logging to `agent.log`
 
 ### Managing the Scheduled Agent
+
+#### macOS
 
 - **Check status**: `launchctl list | grep arxiv`
 - **Run manually**: `launchctl start com.arxiv.agent`
 - **View logs**: `cat agent.log`
 - **Uninstall**: `./uninstall.sh`
 
+#### Linux (Ubuntu/Debian)
+
+- **Check status**: `systemctl --user status arxiv-agent.timer`
+- **Run manually**: `systemctl --user start arxiv-agent.service`
+- **View logs**: `journalctl --user -u arxiv-agent.service -f`
+- **View timer logs**: `journalctl --user -u arxiv-agent.timer -f`
+- **Uninstall**: `./uninstall.sh`
+
 ### Changing the Scheduled Time
 
 The agent runs daily at 9:00 AM by default. To change this:
 
-**Steps to change the scheduled time** 
-1. Edit `setup.sh` and change lines 64-66:
+#### macOS
+
+1. Edit `setup.sh` and find the macOS section (around line 64-66):
    ```bash
    <key>Hour</key>
    <integer>9</integer>  # Change 9 to your desired hour (0-23)
@@ -117,6 +131,25 @@ The agent runs daily at 9:00 AM by default. To change this:
    <integer>0</integer>  # Change 0 to your desired minute (0-59)
    ```
 2. Run `./setup.sh` again
+
+#### Linux (Ubuntu/Debian)
+
+1. Edit `setup.sh` and find the Linux section (around line 150):
+   ```bash
+   OnCalendar=*-*-* 09:00:00  # Change 09:00:00 to your desired time (HH:MM:SS)
+   ```
+2. Run `./setup.sh` again
+
+Alternatively, you can edit the timer file directly:
+```bash
+systemctl --user edit arxiv-agent.timer
+```
+Then add:
+```ini
+[Timer]
+OnCalendar=*-*-* HH:MM:00
+```
+Replace `HH:MM` with your desired time (24-hour format).
 
 ## Configuration
 
@@ -159,11 +192,20 @@ If you see errors about Ollama:
 - Check `agent.log` for error messages
 - Test email settings manually if needed
 
-### LaunchAgent Not Running
+### Scheduled Agent Not Running
+
+#### macOS (LaunchAgent)
 
 - Check status: `launchctl list | grep arxiv`
 - Check logs: `cat agent.log`
 - Reload: `launchctl unload ~/Library/LaunchAgents/com.arxiv.agent.plist && launchctl load ~/Library/LaunchAgents/com.arxiv.agent.plist`
+
+#### Linux (systemd)
+
+- Check timer status: `systemctl --user status arxiv-agent.timer`
+- Check service status: `systemctl --user status arxiv-agent.service`
+- Check logs: `journalctl --user -u arxiv-agent.service -n 50`
+- Reload: `systemctl --user daemon-reload && systemctl --user restart arxiv-agent.timer`
 
 ### Virtual Environment Issues
 
@@ -175,8 +217,10 @@ If you get import errors:
 
 - `main.py` - Main agent script
 - `requirements.txt` - Python dependencies
-- `setup.sh` - macOS LaunchAgent setup script
-- `uninstall.sh` - Remove LaunchAgent
+- `setup.sh` - Cross-platform setup script (macOS LaunchAgent / Linux systemd)
+- `uninstall.sh` - Cross-platform uninstall script
+- `arxiv-agent.service` - systemd service file template (Linux)
+- `arxiv-agent.timer` - systemd timer file template (Linux)
 - `env.example` - Example environment configuration
 - `.env` - Your actual configuration (create from env.example)
 - `relevant_papers.txt` - Cache of previously seen papers
